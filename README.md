@@ -1,130 +1,292 @@
 # Code-Mixed Sentiment Analysis for Indic Social Media
 
-Fine-tuned multilingual transformer models (**mBERT**, **XLM-R**) for sentiment classification
-of Hindi-English code-mixed ("Hinglish") social media text, with targeted data augmentation
-and class-weighted loss to address severe class imbalance.
+A multilingual NLP project for sentiment classification of Hindi-English (Hinglish) code-mixed social media text using Transformer models.
 
-## TL;DR results
+---
 
-| Model | Macro-F1 | Accuracy | Notes |
-|---|---|---|---|
-| TF-IDF + Logistic Regression (baseline) | 0.624 | 0.688 | word(1-2gram) + char(3-5gram) TF-IDF |
-| mBERT, fine-tuned (augmented + class-weighted) | *run notebook* | *run notebook* | `bert-base-multilingual-cased` |
-| XLM-R, fine-tuned (augmented + class-weighted) | *run notebook* | *run notebook* | `xlm-roberta-base` |
+## Project Overview
 
-> The baseline numbers above are real, reproducible results from this repo's `src/baseline.py`
-> on the actual dataset (see `outputs/baseline/baseline_results.json`). The transformer numbers
-> require a GPU to fine-tune (recommended: Colab T4, ~10–15 min/model) — run
-> `notebooks/codemix_sentiment_analysis.ipynb` end-to-end to populate them, then update this
-> table with your actual run's numbers before using this in a portfolio/resume context.
+People in India often write social media posts by mixing Hindi and English in the same sentence.
 
-## Project structure
+For example:
 
-```
-codemix-sentiment/
-├── data/
-│   └── joshi2016_raw_data.txt      # raw labeled corpus (see Dataset section)
-├── notebooks/
-│   └── codemix_sentiment_analysis.ipynb   # main, run this end-to-end in Colab
-├── src/
-│   ├── prepare_data.py             # raw -> clean train/val/test CSV splits
-│   ├── augment.py                  # minority-class oversampling (EDA-style)
-│   ├── baseline.py                 # TF-IDF + Logistic Regression baseline
-│   └── train.py                    # mBERT / XLM-R fine-tuning w/ class-weighted loss
-└── outputs/                        # metrics, trained models (gitignored if large)
-```
+> "Movie toh mast thi but ending was boring."
+
+This type of text is called **code-mixed text**, and it is difficult for traditional NLP systems because it contains multiple languages, informal spelling, and inconsistent grammar.
+
+In this project, I fine-tuned multilingual Transformer models to classify code-mixed text into three sentiment classes:
+
+- Positive
+- Neutral
+- Negative
+
+I also compared the Transformer models with a traditional machine learning baseline to understand whether deep learning actually provides an improvement on this dataset.
+
+---
+
+## Why I Built This Project
+
+I wanted to understand how multilingual Transformer models perform on low-resource Indic NLP tasks.
+
+Instead of focusing only on achieving the highest score, I wanted to build a project that is:
+
+- Easy to reproduce
+- Scientifically fair
+- Easy to understand
+- Based on proper model comparison
+
+---
 
 ## Dataset
 
-This project uses the **Joshi et al. (2016)** Hindi-English code-mixed Facebook comments
-corpus — ~3,900 sentences manually annotated for sentiment (negative / neutral / positive),
-originally introduced in:
+This project uses the **Hindi-English Code-Mixed Sentiment Dataset** released by **Joshi et al. (COLING 2016).**
 
-> Joshi, A., Prabhu, A., Shrivastava, M., & Varma, V. (2016). *Towards sub-word level
-> compositions for sentiment analysis of Hindi-English code mixed text.* COLING 2016.
+The dataset contains approximately **3,900 manually labelled Facebook comments**.
 
-This is one of the foundational, well-cited datasets in Hindi-English code-mixed sentiment
-research and is what most SAIL 2017 / early SemEval-era systems are compared against. The raw
-file is fetched directly from a public GitHub mirror by `notebooks/codemix_sentiment_analysis.ipynb`.
+### Why I selected this dataset
 
-**Why this dataset and not SAIL 2017 / SemEval-2020 Task 9 directly?** Both are good options
-and arguably more "canonical" for citing this exact task, but:
-- SAIL 2017's original data distribution links (Google Drive / Codalab from 2017) are unreliable today.
-- SemEval-2020 Task 9 (SentiMix) is a strong, larger (20k tweets) alternative, but requires a
-  free CodaLab account/registration to download — not a one-line `wget`.
+I selected this dataset because:
 
-The Joshi et al. 2016 corpus is real, labeled, citable, and reliably downloadable via a stable
-GitHub raw URL, which matters if you want the notebook to actually run for someone else without
-manual intervention. **If you want to swap in SemEval-2020 Task 9** after registering for it,
-just point `prepare_data.py --raw_path` at your downloaded file and adjust the parser to match
-its CoNLL-style token-per-line format (different from this corpus's one-row-per-sentence format).
+- It is publicly available.
+- Anyone can reproduce this project without requesting dataset access.
+- It is widely used in early code-mixed sentiment research.
+- It is easy to download and use.
 
-**Class distribution** (imbalanced, which is the point of this project):
+Although larger datasets such as **SemEval-2020 SentiMix** exist, they require additional registration and preprocessing.
 
-| Label | Count | % |
-|---|---|---|
-| neutral | 1,957 | 50.5% |
-| positive | 1,352 | 34.9% |
-| negative | 570 | 14.7% |
+For this project, I preferred **reproducibility over dataset size**.
 
-## Method
+---
 
-1. **Data prep** (`prepare_data.py`): parse raw tab-separated file, light cleaning
-   (whitespace normalization, repeated-character capping), drop empty/duplicate rows,
-   stratified 80/10/10 train/val/test split.
+## Project Pipeline
 
-2. **Imbalance handling — two complementary strategies:**
-   - **Data-level** (`augment.py`): EDA-style augmentation (Wei & Zou, 2019) restricted to
-     adjacent non-stopword token swaps and low-probability token deletion. Chosen over
-     back-translation because it requires no external API/dependency and is fully
-     reproducible offline, which matters for a notebook other people will actually run.
-     Minority classes are oversampled to ~60% of the majority class size, capped at 3x
-     original size to avoid overfitting to repeated paraphrase artifacts.
-   - **Loss-level** (`train.py`): class-weighted cross-entropy with inverse-frequency
-     weights, applied via a custom `Trainer` subclass.
+```
+Dataset
+      ↓
+Data Cleaning
+      ↓
+Train / Validation / Test Split
+      ↓
+EDA Data Augmentation
+      ↓
+Class Weight Calculation
+      ↓
+Model Training
+      ↓
+Evaluation
+      ↓
+Comparison with Baseline
+```
 
-3. **Models**: `bert-base-multilingual-cased` (mBERT) and `xlm-roberta-base` (XLM-R),
-   fine-tuned for 3-way sequence classification.
+---
 
-4. **Baseline**: word(1-2gram) + char(3-5gram) TF-IDF features with Logistic Regression —
-   representative of pre-transformer SAIL/SemEval-era submissions, trained on the
-   *non*-augmented data to give an honest "what imbalance costs you" reference point.
+## Data Preprocessing
 
-5. **Ablation**: the notebook also trains XLM-R with class-weighted loss but *without*
-   augmentation, to isolate how much of the improvement comes from each intervention.
+The following preprocessing steps were applied:
 
-## Honest notes on the results
+- Removed duplicate samples
+- Removed empty rows
+- Normalized whitespace
+- Reduced repeated characters
+- Performed stratified train-validation-test split
 
-- On the TF-IDF baseline, augmentation alone barely moved macro-F1 (0.624 → 0.621 in our
-  runs) — within noise. Classical bag-of-features models don't benefit much from oversampled
-  near-duplicates the way transformers with proper regularization tend to. The real gains in
-  this project come from the **combination** of transfer learning (mBERT/XLM-R pretraining) +
-  class-weighted loss + augmentation together, not augmentation in isolation. The notebook's
-  ablation cell (Section 9) measures this directly — report your own ablation numbers rather
-  than assuming the textbook story holds for this exact dataset.
-- The negative class is genuinely the hard one: the TF-IDF baseline gets 0.37 recall on
-  negative vs 0.83 on neutral. Watch this per-class breakdown, not just macro-F1, when judging
-  whether your imbalance fix actually worked.
-- This corpus (~3,900 examples) is small by modern standards. Treat results as directionally
-  meaningful, not as a tight estimate — rerun with different seeds if you want error bars.
+The stratified split helps maintain similar class distribution across all datasets.
 
-## How to run
+---
 
-1. Open `notebooks/codemix_sentiment_analysis.ipynb` in Google Colab.
-2. Runtime → Change runtime type → **T4 GPU**.
-3. Run all cells top to bottom. Total runtime: ~25–40 minutes (mostly the two fine-tuning runs
-   plus the ablation run).
-4. Final results land in `outputs/final_results_summary.json`.
+## Handling Class Imbalance
 
-## Citation
+The dataset is naturally imbalanced.
 
-If you use the dataset, cite:
-```bibtex
-@inproceedings{joshi2016subword,
-  title={Towards sub-word level compositions for sentiment analysis of Hindi-English code mixed text},
-  author={Joshi, Aditya and Prabhu, Ameya and Shrivastava, Manish and Varma, Vasudeva},
-  booktitle={Proceedings of COLING 2016},
-  pages={2482--2491},
-  year={2016}
-}
-```# Code-Mixed-Sentiment-Analysis-for-Indic-Social-Media
+Instead of ignoring this problem, I used two techniques.
+
+### 1. Easy Data Augmentation (EDA)
+
+EDA performs simple text modifications such as:
+
+- Random word swap
+- Random word deletion
+
+Minority classes were augmented until they reached around **60% of the majority class size**.
+
+To avoid excessive duplication, augmentation was limited to **3× the original class size**.
+
+### Why EDA?
+
+Although back translation is a popular augmentation method, I intentionally selected EDA because:
+
+- It works completely offline.
+- It does not require paid APIs.
+- Anyone can reproduce the project easily.
+- It keeps the project simple and lightweight.
+
+---
+
+### 2. Class Weighted Loss
+
+During Transformer fine-tuning, I used **class-weighted cross entropy loss**.
+
+This gives more importance to minority classes during training and helps reduce the effect of class imbalance.
+
+---
+
+## Models
+
+Three different models were evaluated.
+
+### TF-IDF + Logistic Regression
+
+This is the traditional machine learning baseline.
+
+I included it to fairly compare whether Transformer models actually improve performance.
+
+---
+
+### mBERT
+
+Multilingual BERT fine-tuned for three-class sentiment classification.
+
+---
+
+### XLM-R
+
+XLM-RoBERTa fine-tuned using the same training strategy.
+
+XLM-R has stronger multilingual pretraining and achieved the best performance in this project.
+
+---
+
+## Results
+
+| Model | Macro-F1 | Accuracy |
+|--------|---------:|---------:|
+| TF-IDF + Logistic Regression | 0.6243 | 0.6881 |
+| mBERT | 0.6088 | 0.6366 |
+| XLM-R | **0.6659** | **0.6881** |
+
+### Improvement over Baseline
+
+| Model | Macro-F1 Improvement |
+|--------|--------------------:|
+| mBERT | -2.49% |
+| XLM-R | **+6.66%** |
+
+---
+
+## Key Findings
+
+### Traditional machine learning is still competitive
+
+The TF-IDF baseline performed surprisingly well on this relatively small dataset.
+
+This shows that traditional NLP methods are still strong baselines for low-resource problems.
+
+---
+
+### mBERT did not outperform the baseline
+
+Although mBERT is a multilingual Transformer, it achieved lower performance than the baseline.
+
+Possible reasons include:
+
+- Small dataset size
+- Limited fine-tuning data
+- Better multilingual representations in newer models
+
+Negative results are also valuable because they help us understand model limitations.
+
+---
+
+### XLM-R achieved the best performance
+
+XLM-R produced the highest Macro-F1 score.
+
+Its stronger multilingual pretraining likely helped it better understand Hindi-English code-mixed text.
+
+---
+
+### Macro-F1 is more important than Accuracy
+
+Since the dataset is imbalanced, I mainly evaluated the models using **Macro-F1** instead of Accuracy.
+
+Macro-F1 gives equal importance to every class and provides a more reliable evaluation for imbalanced datasets.
+
+---
+
+## Why I Compared with a Baseline
+
+Many projects report only Transformer results.
+
+I intentionally included a TF-IDF baseline because it answers an important research question:
+
+**Does a Transformer actually improve performance?**
+
+Without a baseline, it is difficult to know whether the improvement is meaningful.
+
+---
+
+## Limitations
+
+This project has some limitations.
+
+- Small dataset (~3,900 samples)
+- Only Hindi-English code-mixed text
+- Single augmentation strategy
+- No statistical significance testing
+- Multiple random seeds were not evaluated
+
+These limitations provide opportunities for future improvements.
+
+---
+
+## Future Work
+
+Possible future improvements include:
+
+- Evaluate on SemEval-2020 SentiMix
+- Compare with IndicBERT and MuRIL
+- Experiment with back translation
+- Train with multiple random seeds
+- Extend to multilingual Indic sentiment analysis
+- Explore sequence-to-sequence models for Indic machine translation
+
+---
+
+## Skills Demonstrated
+
+This project helped me gain practical experience with:
+
+- Natural Language Processing (NLP)
+- Multilingual NLP
+- Hugging Face Transformers
+- PyTorch
+- mBERT
+- XLM-R
+- TF-IDF
+- Logistic Regression
+- Data Augmentation
+- Class Imbalance Handling
+- Macro-F1 Evaluation
+- Reproducible Machine Learning Pipelines
+
+---
+
+## Reproducibility
+
+This repository is designed to be easy to reproduce.
+
+- Public dataset
+- Automatic data download
+- No paid APIs
+- Simple project structure
+- Reproducible training pipeline
+
+Anyone can clone the repository and reproduce the complete workflow.
+
+---
+
+## Final Thoughts
+
+The objective of this project was not only to improve model performance but also to understand how multilingual Transformer models behave on low-resource Indic code-mixed text.
+
+One important lesson from this work is that **a stronger model does not always guarantee better performance**. Careful experimentation, fair comparison, and honest reporting are equally important in research.
